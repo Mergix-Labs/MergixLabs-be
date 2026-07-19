@@ -37,7 +37,7 @@ ALLOWED_HOSTS = config("ALLOWED_HOSTS", cast=list)
 AUTH_USER_MODEL = "users.CustomUser"
 
 INSTALLED_APPS = [
-    # "daphne", uncomment if using sockets
+    "daphne",
     "unfold",
     "unfold.contrib.filters", 
     "unfold.contrib.forms", 
@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "apps.users",
+    "apps.fintech_ai",
 ]
 
 MIDDLEWARE = [
@@ -104,7 +105,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "core.wsgi.application"
-# ASGI_APPLICATION = 'core.asgi.application' uncomment if using sockets
+ASGI_APPLICATION = "core.asgi.application"
 
 
 # Database
@@ -300,3 +301,8 @@ sentry_sdk.init(
     # We recommend adjusting this value in production.
     profiles_sample_rate=1.0,
 )
+
+PINECONE_API_KEY = config('PINECONE_API_KEY', default='')
+PINECONE_INDEX_NAME = config('PINECONE_INDEX_NAME', default='')
+
+GEMINI_API_KEY = config('GEMINI_API_KEY', default='')

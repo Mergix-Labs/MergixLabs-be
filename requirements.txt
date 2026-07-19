@@ -63,3 +63,5 @@ urllib3==2.2.3
 vine==5.1.0
 wcwidth==0.2.13
 zope.interface==7.0.3
+google-generativeai==0.8.5
+pinecone==7.3.0
