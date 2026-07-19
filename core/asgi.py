@@ -1,15 +1,19 @@
-# yourproject/asgi.py
 import os
+
 from django.core.asgi import get_asgi_application
-from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.auth import AuthMiddlewareStack
-# from sockets.routing import websocket_urlpatterns
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 
+django_asgi_app = get_asgi_application()
+
+from channels.routing import ProtocolTypeRouter, URLRouter
+
+from apps.fintech_ai.middleware import JWTAuthMiddleware
+from apps.fintech_ai.routing import websocket_urlpatterns
+
 application = ProtocolTypeRouter({
-    "http": get_asgi_application(),
-    "websocket": AuthMiddlewareStack(
+    "http": django_asgi_app,
+    "websocket": JWTAuthMiddleware(
         URLRouter(
             websocket_urlpatterns
         )
