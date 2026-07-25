@@ -197,7 +197,7 @@ def gemini_fintech_classifier(question: str) -> bool:
     try:
 
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash-lite",
+            model_name="gemini-3.1-flash-lite",
             generation_config={
                 "temperature": 0,
                 "max_output_tokens": 20,
