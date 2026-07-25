@@ -1,4 +1,3 @@
-
 import re
 from typing import Optional, Tuple
 
@@ -20,17 +19,17 @@ GREETING_RESPONSES = {
 
     "who are you":
         (
-            "I am Fintech AI, your financial assistant. "
+            "I am Maya AI, your financial assistant. "
             "I can help with investments, SIPs, mutual funds, "
             "insurance, tax planning, financial goals, and platform navigation."
         ),
 
     "what is your name":
-        "I am Fintech AI, your financial assistant.",
+        "I am Maya AI, your financial assistant.",
 
-    "what is fintech ai":
+    "what is Maya ai":
         (
-            "Fintech AI is an AI-powered financial assistant that helps users "
+            "Samaira AI is an AI-powered financial assistant that helps users "
             "with investments, SIPs, mutual funds, insurance, financial planning, "
             "goal tracking, and navigation within the platform."
         ),
@@ -66,9 +65,9 @@ APP_INFO_RESPONSES = {
             "assist with goals, and guide you through the platform."
         ),
 
-    "tell me about samaira":
+    "tell me about Maya":
         (
-            "Fintech AI is a financial assistant designed to help users "
+            "Maya AI is a financial assistant designed to help users "
             "manage and understand their finances."
         ),
 }
@@ -92,9 +91,9 @@ GREETING_PATTERNS = [
     r"^good evening$",
     r"^good night$",
     r"^namaste$",
-    r"^hello fintech$",
-    r"^hi fintech$",
-    r"^hey fintech$",
+    r"^hello samaira$",
+    r"^hi samaira$",
+    r"^hey samaira$",
     r"^start$",
 ]
 
@@ -160,7 +159,8 @@ def get_greeting_response(text: str) -> str:
     if text in GREETING_RESPONSES:
         return GREETING_RESPONSES[text]
 
-    return "Hello! How can I help you with your financial needs today?"
+    # return "Hello! How can I help you with your financial needs today?"
+    return "Hey! What can I help you with?"
 
 
 def is_app_question(text: str) -> bool:
