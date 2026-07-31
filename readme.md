@@ -10,7 +10,7 @@ Django template that will be used by the backend team as a base structure for up
 - Simple JWT token authentication using DRF
 - APIs for login, signup, and token refresh
 - Configuration for environment variables
-- Setup for S3 with CloudFront and a custom client using Boto3
+- Deploys to [Render](https://render.com) via `render.yaml` (web + Celery worker + Celery beat + Redis + Postgres)
 
 
 ## Installation
@@ -38,6 +38,8 @@ celery -A core worker --loglevel=info -P eventlet
 ### Why Use Eventlet with Celery?
 Eventlet provides greater concurrency compared to the prefork method, allowing you to manage multiple tasks simultaneously without the need for non-blocking code.
 
+On Render, the worker and beat schedule run as their own Background Worker services (`mergixlabs-celery-worker`, `mergixlabs-celery-beat` in `render.yaml`) — they are not started manually.
+
 ## Example of Running a Celery Task
 
 You can run a Celery task within a Django view as follows:
@@ -57,71 +59,25 @@ def run_celery_task(request):
 
     return JsonResponse({'status': 'success'})
 ```
-## CI/CD Setup
-To setup CI/CD follow these steps:
-- **Generate SSH-KEY**: Create a SSH-Key to set into your Github SSH and GPG sections.
-  ```bash
-   ssh-keygen -t ed25519 -C "your_email@gmail.com"
-   ```
-  
-- **Make SSH Agent Run**: To make ssh agent run & function properly.
-   ```bash
-   eval "$(ssh-agent -s)"
-   ```
-   
-- **Adding SSH-Key**: Adding the key is cruscial step.
-   ```bash
-   ssh-add ~/.ssh/id_ed25519
-   ```
-   
-- **Pull through SSH**: To set the origin to pull from ssh-key instead asking for tokens
-   ```bash
-   git remote set-url origin git@github.com:MergixLabs/django-template.git
-   ```
-   
-- **Authorizing Key**: Regestering the SSH-KEY as authorized is a crucial step.
-   ```bash
-   cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
-   ```
-   
-- **Executable Permission**: Adding the right permission.
-   ```bash
-   chmod 600 ~/.ssh/authorized_keys
-   ```
+## Deploying to Render
 
-## Github-Action & Workflow Setup
-  1. Go to the repo settings.
-  2. Go to the Secrets & Variable section and click on Actions.
-  3. Click on New Repository Secret.
-  4. There are going to be 3 required secrets:
-     - **HOST**: The Ip of your EC2 Instance.
-     - **USER**: ubuntu (This is used as default username).
-     - **SSH_PRIVATE_KEY**: This is going to be the same private key of the SSH-KEY that you created while setting up CI/CD steps.
-          To see this use this command.
-          ```bash
-           cat ~/.ssh/id_ed25519
-          ```
-   - There are certain files that are responsible here.
-     - **deploy.yaml**: The file should be located in the root directiory where your **manage.py** is inside **.github/worflows** directory.
-     - **install-docker.sh**: 
-          - This is one time runner only runs if the EC2 instance does not have docker installed.
-          - The file should be located in the root directiory where your **manage.py** is inside **.scripts** directory.
-          - Used for installing docker on the Ec2 instance.
-            
-     - **start-docker.sh**
-         - This is responsible for removing all the conatiners and then starting up them again.
-         - The file should be located in the root directiory where your **manage.py** is inside **.scripts** directory.
-         - It also starts the gunicorn & nginx.
-           
-     - **start.sh**
-        - The file should be located in the root directiory where your **manage.py** is inside **.scripts** directory.
-        - Mainly responsible for running the migrations if exists and bind the port with Gunicorn.
-          
-     - **dockerfile**
-        - The file should be located in the root directiory where your **manage.py**.
-          
-     - **docker-compose.yaml**
-        - The file should be located in the root directiory where your **manage.py**.
+This project deploys to [Render](https://render.com) as a Docker-based Blueprint (`render.yaml`), replacing the old EC2/SSH/GitHub Actions flow. Render builds directly from GitHub — no SSH keys, no deploy workflow file needed.
+
+**One-time setup:**
+1. Push this repo to GitHub (already done if you're reading this on `main`/`staging`).
+2. In the Render dashboard: **New > Blueprint**, point it at this repo. Render reads `render.yaml` and provisions:
+   - `mergixlabs-be` (web, Gunicorn/WSGI, `Dockerfile`, Persistent Disk mounted at `/app/media`)
+   - `mergixlabs-celery-worker` and `mergixlabs-celery-beat` (Background Workers, same image, different `dockerCommand`)
+   - `mergixlabs-redis` (Celery broker/result backend)
+   - `mergixlabs-db` (managed Postgres, wired to `DATABASE_URL` automatically)
+3. Fill in the env vars marked `sync: false` in `render.yaml` (secrets: email/Mailjet/Google/Pinecone/Gemini credentials, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, `FRONTEND_URL`, `SENTRY_DSN`) in the Render dashboard for each service. See `.env.example` for what every variable does.
+4. Deploy. Render's build → pre-deploy → start pipeline for the web service is: build the Docker image → run `preDeployCommand` (`migrate`) → start the container (`.scripts/entrypoint.sh`: `collectstatic` then `gunicorn`) → poll `/health/` until it responds before routing traffic.
+
+**Ongoing deploys:** every push to the branch Render is tracking triggers `autoDeploy` automatically — no manual step.
+
+**Known limitation:** media (`apps.fintech_ai` document uploads) lives on a Persistent Disk attached only to the web service. Render disks can't be shared across services, so the Celery worker's `ingest_document_task` cannot read a file the web service just wrote. This was an explicit, accepted tradeoff when picking a disk over S3 for media — if that pipeline needs to work in production, move `STORAGES["default"]` back to `storages.backends.s3boto3.S3Boto3Storage` (`django-storages`/`boto3`, both removed from `requirements.txt`, would need re-adding) so both services read/write the same object store.
+
+**Local development:** `docker compose up --build` (see `docker-compose.yml`) runs Postgres, Redis, web, worker, and beat together for local parity. Render does not read this file at all — it's purely a local convenience.
 
 ## APIs
 This template includes APIs for:
@@ -131,10 +87,10 @@ This template includes APIs for:
 - **Meeting Scheduling** (`/api/v1/meetings/`): Google Calendar-backed slot lookup, booking, reschedule, and cancellation. See [apps/meeting/README.md](apps/meeting/README.md) for setup and API details.
 
 ## Environment Variables
-Make sure to set up the required environment variables for your project. Use a `settings.ini` file for configuration.
+Copy `.env.example` to `.env` and fill in the values for local development. `.env.example` documents every environment variable the project reads, grouped by area (Django core, database, JWT/cookies, email, Mailjet, Google Calendar, meeting scheduling, Pinecone/Gemini, Celery/Redis, Sentry). On Render, the same variables are set per-service via `render.yaml`.
 
-## S3 Setup
-This template is configured to work with AWS S3 and CloudFront using Boto3. Ensure you have your AWS credentials set up.
+## Media Storage
+User-uploaded files (e.g. `apps.fintech_ai` knowledge documents) are stored on local disk via `MEDIA_ROOT`/`MEDIA_URL`. In production on Render this is a Persistent Disk mounted at `/app/media` on the web service only — see the "Deploying to Render" section above for the resulting limitation with the Celery-based document ingestion pipeline.
 
 ## Contributing
 Feel free to contribute to this project by forking the repository and submitting a pull request.

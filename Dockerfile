@@ -1,32 +1,57 @@
-# Taking Python as the base image
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1
 
-# Setting the working directory
+# ---- Builder stage: compile wheels with build tooling, discarded afterwards ----
+FROM python:3.11-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
 WORKDIR /app
 
-# Installing system libraries
-RUN apt-get update && apt-get install -y \
-    gcc libpq-dev --no-install-recommends && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copying requirements file first to leverage Docker caching
-COPY requirements.txt /app/
+COPY requirements.txt .
+RUN pip install --upgrade pip \
+    && pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
-# Installing Python dependencies
-RUN pip install --upgrade pip && pip install -r requirements.txt --verbose
 
-# Copying the rest of the project files
-COPY . /app/
+# ---- Final stage: slim runtime image, no compiler toolchain ----
+FROM python:3.11-slim
 
-# Copying start.sh to a different directory to avoid volume overwrite
-COPY .scripts/start.sh /start.sh
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Give execute permissions to start.sh
-RUN chmod +x /start.sh
+WORKDIR /app
 
-# Exposing the port for the app
+# libpq5 is the psycopg2 runtime client library; libpq-dev/gcc (build-only) stay in the builder stage.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /wheels /wheels
+COPY requirements.txt .
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
+    && rm -rf /wheels
+
+COPY . .
+
+RUN addgroup --system app \
+    && adduser --system --ingroup app --no-create-home app \
+    && mkdir -p /app/staticfiles /app/media \
+    && chown -R app:app /app \
+    && chmod +x .scripts/entrypoint.sh
+
+USER app
+
 EXPOSE 8000
 
-# Command to run migrations and start the server
-CMD ["sh", "/start.sh"]
+# CMD (not ENTRYPOINT) so Render's `dockerCommand` can fully replace it per-service
+# -- the Celery worker/beat services reuse this same image but override this command.
+CMD ["sh", ".scripts/entrypoint.sh"]

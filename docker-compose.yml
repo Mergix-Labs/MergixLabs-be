@@ -1,0 +1,65 @@
+# Local development only. Render does NOT read or execute this file -- each Render
+# service (web/worker/beat) builds independently from the Dockerfile per render.yaml.
+# This just gives local Postgres + Redis parity with what Render provisions.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mergixlabs
+      POSTGRES_USER: mergixlabs
+      POSTGRES_PASSWORD: mergixlabs
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://mergixlabs:mergixlabs@db:5432/mergixlabs
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - media:/app/media
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build: .
+    command: celery -A core worker --loglevel=info -P eventlet
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://mergixlabs:mergixlabs@db:5432/mergixlabs
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  beat:
+    build: .
+    command: celery -A core beat --loglevel=info
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://mergixlabs:mergixlabs@db:5432/mergixlabs
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+volumes:
+  pgdata:
+  media:

@@ -12,7 +12,8 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 
 from datetime import timedelta
 from pathlib import Path
-from decouple import config
+import dj_database_url
+from decouple import config, Csv
 from corsheaders.defaults import default_headers
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,7 +31,8 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config("DEBUG", cast=bool)
 
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", cast=list)
+# Comma-separated, e.g. ALLOWED_HOSTS=myapp.onrender.com,mydomain.com
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", cast=Csv())
 
 
 # Application definition
@@ -58,6 +60,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -85,9 +88,9 @@ CHANNEL_LAYERS = {
 #    },
 # }
 
-## Mailjet Config
-# MAILJET_API_KEY = config("MAILJET_API_KEY")
-# MAILJET_SECRET_KEY = config("MAILJET_SECRET_KEY")
+## Mailjet Config (used by core.tasks.send_forgot_email)
+MAILJET_API_KEY = config("MAILJET_API_KEY", default="")
+MAILJET_SECRET_KEY = config("MAILJET_SECRET_KEY", default="")
 
 TEMPLATES = [
     {
@@ -112,16 +115,25 @@ ASGI_APPLICATION = "core.asgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME"),
-        "USER": config("DB_USER"),
-        "PASSWORD": config("DB_PASSWORD"),
-        "HOST": config("DB_HOST"),
-        "PORT": config("DB_PORT"),
+# Render provides a managed Postgres instance via DATABASE_URL. Falls back to a
+# local sqlite file when DATABASE_URL isn't set (local dev without Postgres).
+DATABASE_URL = config("DATABASE_URL", default="")
+
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=not DEBUG,
+        )
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 
 
@@ -142,7 +154,7 @@ AUTH_PASSWORD_VALIDATORS = [
         "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
-# FRONTEND_URL = config("FRONTEND_URL")
+FRONTEND_URL = config("FRONTEND_URL", default="")
 
 # DRF Configrations
 CORS_ORIGIN_ALLOW_ALL = False
@@ -150,15 +162,11 @@ if DEBUG == True:
     CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_CREDENTIALS = True ## Used to pass the cookie in the request
 CORS_ALLOW_HEADERS = list(default_headers) + ['Set-Cookie']
-CORS_ORIGIN_WHITELIST = (
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1',
-  'http://localhost:3000'
-)
-CORS_ALLOWED_ORIGINS = (
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1',
-  'http://localhost:3000'
+# Comma-separated, e.g. CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+CORS_ALLOWED_ORIGINS = config(
+    "CORS_ALLOWED_ORIGINS",
+    default="http://127.0.0.1:3000,http://127.0.0.1,http://localhost:3000",
+    cast=Csv(),
 )
 CORS_ALLOW_METHODS = [
     'GET',
@@ -168,11 +176,10 @@ CORS_ALLOW_METHODS = [
     'DELETE',
     'OPTIONS',
 ]
-## AWS Bucket
-# AWS_ACCESS_KEY_ID = config("AWS_ACCESS_KEY_ID")
-# AWS_SECRET_ACCESS_KEY = config("AWS_SECRET_ACCESS_KEY")
-# AWS_STORAGE_BUCKET_NAME = config("AWS_STORAGE_BUCKET_NAME")
-# AWS_S3_CUSTOM_DOMAIN = config("AWS_S3_CUSTOM_DOMAIN")
+
+# Comma-separated, required when the frontend calls this API cross-site over HTTPS,
+# e.g. CSRF_TRUSTED_ORIGINS=https://app.example.com,https://myapp.onrender.com
+CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 
 LANGUAGE_CODE = "en-us"
 
@@ -225,12 +232,14 @@ MEETING_REMINDER_LEAD_MINUTES = config('MEETING_REMINDER_LEAD_MINUTES', default=
 MEETING_DEFAULT_TITLE_PREFIX = config('MEETING_DEFAULT_TITLE_PREFIX', default='Meeting with')
 
 ## Storages
+# Media lives on a Render Persistent Disk mounted at MEDIA_ROOT (web service only --
+# the Celery worker service does not have access to this disk, see readme.md).
 STORAGES = {
     "default": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 
@@ -311,6 +320,12 @@ UNFOLD = {
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Media files (user uploads, e.g. apps.fintech_ai KnowledgeDocument). MEDIA_ROOT is
+# overridable so it can point at the Render Persistent Disk mount path in production.
+MEDIA_URL = "media/"
+MEDIA_ROOT = config("MEDIA_ROOT", default=str(BASE_DIR / "media"))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
@@ -318,16 +333,33 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-sentry_sdk.init(
-    # dsn=config("SENTRY_DSN"),
-    # Set traces_sample_rate to 1.0 to capture 100%
-    # of transactions for tracing.
-    traces_sample_rate=1.0,
-    # Set profiles_sample_rate to 1.0 to profile 100%
-    # of sampled transactions.
-    # We recommend adjusting this value in production.
-    profiles_sample_rate=1.0,
-)
+# Security settings for running behind Render's TLS-terminating proxy.
+# Left off in DEBUG so local HTTP development isn't forced onto HTTPS/secure cookies.
+SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=not DEBUG, cast=bool)
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+
+SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=not DEBUG, cast=bool)
+CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=not DEBUG, cast=bool)
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0 if DEBUG else 60 * 60 * 24 * 7, cast=int)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_HSTS_PRELOAD = not DEBUG
+
+
+SENTRY_DSN = config("SENTRY_DSN", default="")
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        # Set traces_sample_rate to 1.0 to capture 100%
+        # of transactions for tracing.
+        traces_sample_rate=1.0,
+        # Set profiles_sample_rate to 1.0 to profile 100%
+        # of sampled transactions.
+        # We recommend adjusting this value in production.
+        profiles_sample_rate=1.0,
+    )
 
 PINECONE_API_KEY = config('PINECONE_API_KEY', default='')
 PINECONE_INDEX_NAME = config('PINECONE_INDEX_NAME', default='')
@@ -348,7 +380,21 @@ LOGGING = {
             "formatter": "verbose",
         },
     },
+    "root": {
+        "handlers": ["console"],
+        "level": config("DJANGO_LOG_LEVEL", default="WARNING"),
+    },
     "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": config("DJANGO_LOG_LEVEL", default="INFO"),
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
         "meeting": {
             "handlers": ["console"],
             "level": config("MEETING_LOG_LEVEL", default="INFO"),
