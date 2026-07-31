@@ -128,6 +128,7 @@ This template includes APIs for:
 - **Login**: Authenticate users and issue JWT tokens.
 - **Signup**: Register new users.
 - **Refresh Token**: Obtain new tokens using refresh tokens.
+- **Meeting Scheduling** (`/api/v1/meetings/`): Google Calendar-backed slot lookup, booking, reschedule, and cancellation. See [apps/meeting/README.md](apps/meeting/README.md) for setup and API details.
 
 ## Environment Variables
 Make sure to set up the required environment variables for your project. Use a `settings.ini` file for configuration.
