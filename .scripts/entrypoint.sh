@@ -9,27 +9,29 @@ echo "Creating superuser if it doesn't exist..."
 python manage.py shell <<EOF
 from django.contrib.auth import get_user_model
 import os
+import traceback
 
 User = get_user_model()
 
-username = os.environ.get("DJANGO_SUPERUSER_USERNAME")
 email = os.environ.get("DJANGO_SUPERUSER_EMAIL")
 password = os.environ.get("DJANGO_SUPERUSER_PASSWORD")
+full_name = os.environ.get("DJANGO_SUPERUSER_FULL_NAME", "Admin")
 
-if username and password:
-    lookup = {"email": email} if email else {"username": username}
-
-    if not User.objects.filter(**lookup).exists():
-        User.objects.create_superuser(
-            username=username,
-            email=email,
-            password=password
-        )
-        print("✅ Superuser created.")
+try:
+    if email and password:
+        if not User.objects.filter(email=email).exists():
+            User.objects.create_superuser(
+                email=email,
+                password=password,
+                full_name=full_name,
+            )
+            print("✅ Superuser created.")
+        else:
+            print("ℹ️ Superuser already exists.")
     else:
-        print("ℹ️ Superuser already exists.")
-else:
-    print("⚠️ Superuser environment variables not set. Skipping.")
+        print("⚠️ DJANGO_SUPERUSER_EMAIL or DJANGO_SUPERUSER_PASSWORD is missing.")
+except Exception:
+    traceback.print_exc()
 EOF
 
 echo "Collecting static files..."
