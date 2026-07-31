@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "apps.users",
     "apps.fintech_ai",
+    "apps.meeting",
 ]
 
 MIDDLEWARE = [
@@ -111,23 +112,15 @@ ASGI_APPLICATION = "core.asgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-if not config("USE_Postgres",cast=bool):
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": config("DB_NAME"),
+        "USER": config("DB_USER"),
+        "PASSWORD": config("DB_PASSWORD"),
+        "HOST": config("DB_HOST"),
+        "PORT": config("DB_PORT"),
     }
-else:
-    DATABASES = {
-   'default': {
-       'ENGINE': 'django.db.backends.postgresql',
-       'NAME': config('DB_NAME'),
-       'USER': config('DB_USER'),
-       'PASSWORD': config('DB_PASSWORD'),
-       'HOST': config('DB_HOST'),
-       'PORT': config('DB_PORT'),
-   }
 }
 
 
@@ -191,11 +184,45 @@ USE_TZ = True
 
 # Celery Settings
 CELERY_TIMEZONE = 'Asia/Kolkata'
-# CELERY_BROKER_URL =config('CELERY_BROKER_URL')
-# CELERY_RESULT_BACKEND =config('CELERY_RESULT_BACKEND')
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://127.0.0.1:6379/0')
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://127.0.0.1:6379/0')
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TASK_SERIALIZER = 'json'
+
+# Email Settings (used by apps.meeting for confirmation/reminder/reschedule/cancellation emails)
+EMAIL_BACKEND = config(
+    'EMAIL_BACKEND',
+    default='django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
+)
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@mergixlabs.com')
+
+# Google Calendar Settings (apps.meeting) -- OAuth2 refresh-token flow for the
+# admin's Google account. A service account is NOT used: service accounts can't
+# invite attendees or create Meet links without Workspace domain-wide delegation.
+GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', default='')
+GOOGLE_CLIENT_SECRET = config('GOOGLE_CLIENT_SECRET', default='')
+GOOGLE_REFRESH_TOKEN = config('GOOGLE_REFRESH_TOKEN', default='')
+GOOGLE_TOKEN_URI = config('GOOGLE_TOKEN_URI', default='https://oauth2.googleapis.com/token')
+GOOGLE_CALENDAR_ID = config('GOOGLE_CALENDAR_ID', default='primary')
+GOOGLE_ADMIN_EMAIL = config('GOOGLE_ADMIN_EMAIL', default='')
+
+# Meeting Scheduling Settings (apps.meeting)
+MEETING_TIMEZONE = config('MEETING_TIMEZONE', default='UTC')
+MEETING_WORKING_DAYS = config('MEETING_WORKING_DAYS', default='0,1,2,3,4')  # Mon-Fri, Monday=0
+MEETING_WORKING_HOURS_START = config('MEETING_WORKING_HOURS_START', default='09:00')
+MEETING_WORKING_HOURS_END = config('MEETING_WORKING_HOURS_END', default='18:00')
+MEETING_SLOT_DURATION_MINUTES = config('MEETING_SLOT_DURATION_MINUTES', default=30, cast=int)
+MEETING_BUFFER_MINUTES = config('MEETING_BUFFER_MINUTES', default=0, cast=int)
+MEETING_MIN_NOTICE_MINUTES = config('MEETING_MIN_NOTICE_MINUTES', default=60, cast=int)
+MEETING_MAX_ADVANCE_DAYS = config('MEETING_MAX_ADVANCE_DAYS', default=30, cast=int)
+MEETING_REMINDER_LEAD_MINUTES = config('MEETING_REMINDER_LEAD_MINUTES', default=60, cast=int)
+MEETING_DEFAULT_TITLE_PREFIX = config('MEETING_DEFAULT_TITLE_PREFIX', default='Meeting with')
 
 ## Storages
 STORAGES = {
@@ -306,3 +333,31 @@ PINECONE_API_KEY = config('PINECONE_API_KEY', default='')
 PINECONE_INDEX_NAME = config('PINECONE_INDEX_NAME', default='')
 
 GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "meeting": {
+            "handlers": ["console"],
+            "level": config("MEETING_LOG_LEVEL", default="INFO"),
+            "propagate": False,
+        },
+        "fintech_ai": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
